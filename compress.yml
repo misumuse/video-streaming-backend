@@ -1,0 +1,38 @@
+name: Video Cruncher
+on:
+  push:
+    paths:
+      - 'uploads/**' # Triggers when you add a file to the /uploads folder
+
+jobs:
+  compress:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Process Video
+        run: |
+          mkdir -p output
+          for f in uploads/*.mp4; do
+            # The "Super Tiny" settings: 360p, Low Bitrate, Mono Audio
+            ffmpeg -i "$f" \
+              -vcodec libx264 -crf 28 -preset faster \
+              -vf "scale=640:360" \
+              -b:v 400k -maxrate 400k -bufsize 800k \
+              -acodec aac -b:a 64k -ac 1 \
+              "output/$(basename "$f")"
+          done
+
+      - name: Upload to Cloudflare R2
+        uses: jakejarvis/s3-sync-action@master
+        with:
+          args: --endpoint-url https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+        env:
+          AWS_S3_BUCKET: ${{ secrets.R2_BUCKET_NAME }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          SOURCE_DIR: 'output'
