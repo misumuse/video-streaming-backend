@@ -1,34 +1,37 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Low-Fi Streamer</title>
-    <style>
-        body { background: #000; color: #0f0; font-family: monospace; display: flex; flex-direction: column; align-items: center; padding: 20px; }
-        video { width: 100%; max-width: 480px; border: 1px solid #0f0; margin-top: 20px; }
-        input { background: #111; border: 1px solid #0f0; color: #0f0; padding: 10px; width: 300px; }
-        button { background: #0f0; color: #000; border: none; padding: 10px 20px; cursor: pointer; font-weight: bold; }
-    </style>
-</head>
-<body>
-    <h2>VIDEO_STREAM_v1.0</h2>
-    <div>
-        <input type="text" id="videoName" placeholder="Enter filename (e.g. myvideo.mp4)">
-        <button onclick="playVideo()">LOAD</button>
-    </div>
-    
-    <video id="player" controls></video>
+name: Video Backend
+on:
+  push:
+    paths:
+      - 'raw/*.mp4'
 
-    <script>
-        function playVideo() {
-            const name = document.getElementById('videoName').value;
-            // REPLACE THIS URL with your Cloudflare Public Bucket URL
-            const baseUrl = "https://pub-your-unique-id.r2.dev/"; 
-            const player = document.getElementById('player');
-            player.src = baseUrl + name;
-            player.play();
-        }
-    </script>
-</body>
-</html>
+jobs:
+  crunch-and-cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Crunch Video
+        run: |
+          mkdir -p compressed
+          for f in raw/*.mp4; do
+            # The compression command
+            ffmpeg -i "$f" -vcodec libx264 -crf 32 -vf "scale=480:-2" -b:v 200k -acodec aac -b:a 32k "compressed/$(basename "$f")"
+          done
+
+      - name: Cleanup Raw Files
+        run: rm raw/*.mp4 # This deletes the big versions
+
+      - name: Save Changes
+        run: |
+          git config --global user.name 'VideoBot'
+          git config --global user.email 'bot@github.com'
+          git add compressed/
+          git add raw/
+          git commit -m "Crunched video and cleared raw folder" || echo "No changes"
+          git push
